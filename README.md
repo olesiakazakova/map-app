@@ -55,19 +55,21 @@ npx expo start --clear
 
 ```
 map-app/
-├── app/
+├── app/                       # Экраны
 │   ├── _layout.tsx            # Корневой лэйаут (MarkersProvider + Stack)
 │   ├── index.tsx              # Экран карты
 │   └── marker/
 │       └── [id].tsx           # Экран деталей маркера
-├── components/
+├── assets/                    # Иконки
+├── components/                # Компоненты
 │   ├── Map.tsx                # Компонент карты (OpenStreetMap)
 │   ├── ImageList.tsx          # Сетка изображений
 │   └── MarkersContext.tsx     # Глобальное хранилище
-├── types.ts                   # TypeScript-интерфейсы
 ├── app.json                   # Конфиг Expo
-├── package.json
-└── tsconfig.json
+├── package-lock.json          # Точные версии пакетов
+├── package.json               # Зависимости
+├── tsconfig.json              # Настройки TS
+└── types.ts                   # TypeScript-интерфейсы
 ```
 
 ## 🧩 Принятые решения
