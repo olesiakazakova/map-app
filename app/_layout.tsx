@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { MarkersProvider } from '../components/MarkersContext';
+import { MarkersProvider } from '../components/MarkerList';
 
 export default function RootLayout() {
   return (

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Map } from '../components/Map';
-import { useMarkers } from '../components/MarkersContext';
+import { useMarkers } from '../components/MarkerList';
 
 export default function MapScreen() {
   const router = useRouter();

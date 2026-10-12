@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Button, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { useMarkers } from '../../components/MarkersContext';
+import { useMarkers } from '../../components/MarkerList';
 import { ImageList } from '../../components/ImageList';
 import { MarkerImage } from '../../types';
 
