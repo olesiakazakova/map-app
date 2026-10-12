@@ -64,7 +64,7 @@ map-app/
 ├── components/                # Компоненты
 │   ├── Map.tsx                # Компонент карты (OpenStreetMap)
 │   ├── ImageList.tsx          # Сетка изображений
-│   └── MarkersList.tsx     # Глобальное хранилище
+│   └── MarkersList.tsx        # Глобальное хранилище
 ├── app.json                   # Конфиг Expo
 ├── package-lock.json          # Точные версии пакетов
 ├── package.json               # Зависимости
