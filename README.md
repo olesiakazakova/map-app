@@ -1,6 +1,6 @@
 # Map App — React Native + Expo
 
-Мобильное приложение с картой OpenStreetMap, маркерами и привязанными к ним изображениями.
+Мобильное приложение с картой OpenStreetMap, маркерами и привязанными к ним изображениями. Данные **сохраняются локально** в SQLite и **не теряются** при перезапуске приложения.
 
 ## 📱 Что умеет
 
@@ -10,6 +10,7 @@
 - Позволяет добавлять изображения из галереи 
 - Удаляет изображения и маркеры с подтверждением
 - Обрабатывает ошибки: разрешения, отмена выбора, ненайденный маркер
+- **Сохраняет данные в SQLite** между запусками приложения
 
 ## 🛠 Стек технологий
 
@@ -63,14 +64,52 @@ map-app/
 ├── assets/                    # Иконки
 ├── components/                # Компоненты
 │   ├── Map.tsx                # Компонент карты (OpenStreetMap)
-│   ├── ImageList.tsx          # Сетка изображений
-│   └── MarkersList.tsx        # Глобальное хранилище
+│   └── ImageList.tsx          # Сетка изображений
+├── contexts/
+│   └── DatabaseContext.tsx    # React Context: SQLite + CRUD + статусы
+├── database/
+│   ├── schema.ts              # Открытие БД, PRAGMA, миграции
+│   └── operations.ts          # CRUD-операции, row ↔ UI, DatabaseError
 ├── app.json                   # Конфиг Expo
 ├── package-lock.json          # Точные версии пакетов
 ├── package.json               # Зависимости
 ├── tsconfig.json              # Настройки TS
 └── types.ts                   # TypeScript-интерфейсы
 ```
+## 🗄 Схема базы данных
+
+Файл: `markers.db` (создаётся автоматически в песочнице приложения).
+
+### Таблица `markers`
+
+| Колонка | Тип | Ограничения | Зачем |
+|---|---|---|---|
+| `id` | `INTEGER` | `PRIMARY KEY AUTOINCREMENT` | Уникальный id |
+| `latitude` | `REAL` | `NOT NULL` | Широта |
+| `longitude` | `REAL` | `NOT NULL` | Долгота |
+| `created_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Время создания (UTC) |
+| `title` | `TEXT` | `NOT NULL DEFAULT ''` | Название маркера (добавлено миграцией 2) |
+
+### Таблица `marker_images`
+
+| Колонка | Тип | Ограничения | Зачем |
+|---|---|---|---|
+| `id` | `INTEGER` | `PRIMARY KEY AUTOINCREMENT` | Уникальный id |
+| `marker_id` | `INTEGER` | `NOT NULL`, `FOREIGN KEY → markers(id) ON DELETE CASCADE` | К какому маркеру привязано |
+| `uri` | `TEXT` | `NOT NULL` | Путь к файлу изображения |
+| `created_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Время добавления |
+
+### Связи
+
+- **Один-ко-многим:** один `marker` → много `marker_images`.
+- **Каскадное удаление:** удаление маркера удаляет все его изображения (`ON DELETE CASCADE` + `PRAGMA foreign_keys = ON`).
+
+### Версионирование и миграции
+
+- `PRAGMA user_version` — версия схемы в заголовке файла БД.
+- **v1** — `CREATE TABLE markers`, `CREATE TABLE marker_images`.
+- **v2** — `ALTER TABLE markers ADD COLUMN title TEXT NOT NULL DEFAULT ''`.
+- Блоки `if (version < N)` гарантируют, что каждая миграция применяется **ровно один раз** и только к тем, у кого её ещё нет. Обновление приложения **не теряет данные**.
 
 ## 🧩 Принятые решения
 
@@ -92,9 +131,81 @@ map-app/
 
 **Решение:** Используется `onMapClick` + проверка попадания в радиус маркера (`HIT_RADIUS = 0.0005°` ≈ 50 м). Если тап попал в радиус — открываем детали, иначе — добавляем новый маркер.
 
+### 4. SQLite вместо in-memory
+
+**Проблема:** в первом задании данные жили в `useState` и **терялись** при перезапуске.
+
+**Решение:** `expo-sqlite` + `React Context`. Контекст открывает БД, держит соединение, грузит данные в state и даёт CRUD-методы. Экраны **не пишут SQL** — только `useMarkers()`.
+
+### 5. Разделение слоёв
+
+- `database/schema.ts` — открытие БД, PRAGMA, миграции.
+- `database/operations.ts` — CRUD, конвертация `row ↔ UI`, `DatabaseError`.
+- `contexts/DatabaseContext.tsx` — состояние, методы, обработка ошибок.
+- `app/*`, `components/*` — только UI, без SQL.
+
+### 6. `id: string` в UI / `number` в БД
+
+В `MapMarkerData.id` — **строка** (совместимость с `RootStackParamList` и expo-router: параметры URL — строки). Внутри `operations.ts` — `Number(id)` для SQLite, наружу — `String(row.id)`. Конвертация — в одном месте (`rowToMarker`, `rowToImage`).
+
+## 🛡 Обработка ошибок
+
+Ошибки обрабатываются **на всех уровнях**.
+
+### 1. Ошибки инициализации БД
+
+- `openDatabase()` обёрнут в `try/catch` в `useEffect` контекста.
+- Ошибка → `setError` → UI показывает сообщение + кнопку **«Повторить»**.
+- `retryInit()` увеличивает `initAttempt` → `useEffect` перезапускается → повторная попытка.
+- `isLoading` сбрасывается в `finally` — UI не зависает в крутилке.
+
+### 2. Ошибки транзакций
+
+- `deleteMarker` обёрнут в `withTransactionAsync` — атомарность (удаление маркера + каскад изображений).
+- Ошибка → откат → `DatabaseError` с оригиналом в `cause`.
+
+### 3. Нарушения ограничений (FK, NOT NULL)
+
+- `PRAGMA foreign_keys = ON` — иначе каскад **не работает**.
+- `insertImage` к несуществующему маркеру → `SQLITE_CONSTRAINT_FOREIGNKEY` → `DatabaseError('Не удалось добавить изображение', cause)`.
+- `insertMarker` с `latitude: undefined` → `NOT NULL constraint failed` → `DatabaseError('Не удалось создать маркер', cause)`.
+
+### 4. Проблемы с подключением
+
+- `requireDb()` бросает `'База данных не инициализирована'`, если `dbRef.current === null`.
+- `wrap()` ловит это → `setError` + `throw`.
+
+### 5. Единая обработка — `wrap()`
+
+Все методы контекста обёрнуты в `wrap`:
+
+1. Логирует ошибку (`__DEV__`).
+2. Кладёт в `error` (если компонент жив — `mountedRef`).
+3. Пробрасывает дальше — экран может показать `Alert`.
+
+### 6. Очистка ресурсов
+
+- `cancelled` — прерывает инициализацию, если компонент размонтирован во время `await`.
+- `mountedRef` — запрещает `setState` после размонтирования.
+- `closeAsync()` + `dbRef = null` — закрытие соединения в cleanup.
+
+### 7. Тип `DatabaseError`
+
+```typescript
+class DatabaseError extends Error {
+  constructor(message: string, public readonly cause?: unknown) { ... }
+}
+```
+
+Пользователю — понятное `message`, разработчику — оригинал в `cause` (например, `SQLITE_CONSTRAINT...`).
+
+### 8. Логирование в dev
+
+- `log()` в `operations.ts` под `__DEV__` — операции с БД.
+- `console.error('[MarkersContext]', err)` в `wrap` — ошибки контекста.
+
 ## ⚠️ Известные ограничения
 
 - **`HIT_RADIUS` фиксирован.** Если маркеры стоят близко друг к другу (< 50 м), тап может открыть не тот маркер.
 - **Нет `onLongPress`.** Добавление маркеров — по обычному тапу.
-- **Данные не сохраняются.** После перезапуска приложения маркеры исчезают.
 - **Нет редактирования названия.** Маркеры называются «Место N» и переименовать их нельзя.
