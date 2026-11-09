@@ -1,18 +1,39 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Button, Alert, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+  View, Text, StyleSheet, Button, Alert, ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { useMarkers } from '../../components/MarkerList';
+import { useMarkers } from '../../contexts/DatabaseContext';
 import { ImageList } from '../../components/ImageList';
-import { MarkerImage } from '../../types';
+import { MapMarkerData, MarkerImage } from '../../types';
 
 export default function MarkerDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { getMarker, addImage, removeImage, removeMarker } = useMarkers();
+  const { getMarker, addImage, removeImage, removeMarker, isLoading: ctxLoading } = useMarkers();
+
+  const [marker, setMarker] = useState<MapMarkerData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [picking, setPicking] = useState(false);
 
-  const marker = getMarker(id);
+  const load = useCallback(async () => {
+    if (ctxLoading) return;
+    setLoading(true);
+    try {
+      setMarker(await getMarker(id));
+    } catch (e) {
+      Alert.alert('Ошибка', (e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [getMarker, id, ctxLoading]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  if (ctxLoading || loading) {
+    return <View style={styles.centered}><ActivityIndicator /></View>;
+  }
 
   if (!marker) {
     return (
@@ -38,7 +59,10 @@ export default function MarkerDetailsScreen() {
         selectionLimit: 10,
       });
       if (result.canceled) return;
-      result.assets.forEach((asset) => addImage(marker.id, asset.uri));
+      for (const asset of result.assets) {
+        await addImage(marker.id, asset.uri);
+      }
+      await load(); 
     } catch (e) {
       Alert.alert('Ошибка', 'Не удалось выбрать изображение.');
     } finally {
@@ -49,7 +73,14 @@ export default function MarkerDetailsScreen() {
   const confirmDeleteImage = (img: MarkerImage) => {
     Alert.alert('Удалить изображение?', undefined, [
       { text: 'Отмена', style: 'cancel' },
-      { text: 'Удалить', style: 'destructive', onPress: () => removeImage(marker.id, img.id) },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          try { await removeImage(marker.id, img.id); await load(); }
+          catch (e) { Alert.alert('Ошибка', (e as Error).message); }
+        },
+      },
     ]);
   };
 
@@ -59,9 +90,13 @@ export default function MarkerDetailsScreen() {
       {
         text: 'Удалить',
         style: 'destructive',
-        onPress: () => {
-          removeMarker(marker.id);
-          router.back();
+        onPress: async () => {
+          try {
+            await removeMarker(marker.id);
+            router.back();
+          } catch (e) {
+            Alert.alert('Ошибка', (e as Error).message);
+          }
         },
       },
     ]);

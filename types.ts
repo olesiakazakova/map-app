@@ -1,3 +1,4 @@
+// Изначальные структуры
 export interface MarkerImage {
   id: string;
   uri: string;
@@ -17,3 +18,19 @@ export type RootStackParamList = {
   index: undefined;
   'marker/[id]': { id: string };
 };
+
+// Структуры для БД
+export interface MarkerRow {
+  id: number;
+  title: string;
+  latitude: number;
+  longitude: number;
+  created_at: string;
+}
+
+export interface MarkerImageRow {
+  id: number;
+  marker_id: number;
+  uri: string;
+  created_at: string;
+}
